@@ -17,7 +17,7 @@
     "opack2reload.mixins.json"
   ],
   "depends": {
-    "fabricloader": "*",
-    "minecraft": "*"
+    "fabricloader": ">=0.18.4",
+    "minecraft": ">=26.1.2"
   }
 }
