@@ -17,7 +17,7 @@
     "opack2reload.mixins.json"
   ],
   "depends": {
-    "fabricloader": ">=0.18.4",
-    "minecraft": ">=26.1.2"
+    "fabricloader": ">=${loader_version}",
+    "minecraft": "${minecraft_dependency}"
   }
 }

@@ -1,81 +1,62 @@
 plugins {
-    id 'net.fabricmc.fabric-loom' version '1.15-SNAPSHOT'
-    id 'maven-publish'
+	id 'fabric-loom' version '1.17.20' apply false
+	id 'net.fabricmc.fabric-loom-remap' version '1.17.20' apply false
+
+	// https://github.com/ReplayMod/preprocessor (upstream, consumes the mapping files below)
+	id 'com.replaymod.preprocess' version '221276c7'
 }
 
-version = project.mod_version
-group = project.maven_group
+preprocess {
+	// strict mode parses the link() mapping files in the ExtraMapping format (see versions/mapping-*.txt)
+	strictExtraMappings = true
 
-base {
-    archivesName = project.archives_base_name
+	// Specify main project (otherwise preprocessor won't know which project is the base)
+	// the upstream plugin reads it from versions/<v>/../mainProject, i.e. versions/mainProject
+
+	// obfuscated (1.21.x) nodes pass 'official', unobfuscated (26.x) nodes must pass null
+	def mc260102 = createNode('26.1.2', 26_01_02, null)
+	def mc260200 = createNode('26.2', 26_02_00, null)
+	def mc260300 = createNode('26.3', 26_03_00, null)
+
+	mc260102.link(mc260200, file('versions/mapping-26.1.2-26.2.txt'))
+	mc260200.link(mc260300, file('versions/mapping-26.2-26.3.txt'))
+
+	// the upstream extension does not expose its node list, so publish mcVersion explicitly
+	// (common.gradle reads project.mcVersion before the preprocess plugin applies)
+	[
+		'26.1.2': 26_01_02,
+		'26.2'  : 26_02_00,
+		'26.3'  : 26_03_00,
+	].forEach { name, code ->
+		findProject(":$name").ext.mcVersion = code
+	}
 }
 
-repositories {
-    maven {
-        url = "https://api.modrinth.com/maven"
-    }
-    maven {
-        url = "https://maven.terraformersmc.com/"
-    }
+tasks.register('buildAndGather') {
+	subprojects {
+		dependsOn project.tasks.named('build').get()
+	}
+	doFirst {
+		println 'Gathering builds'
+		def buildLibs = {
+			p -> p.buildDir.toPath().resolve('libs')
+		}
+		delete fileTree(buildLibs(rootProject)) {
+			include '*'
+		}
+		subprojects {
+			copy {
+				from(buildLibs(project)) {
+					include '*.jar'
+					exclude '*-dev.jar', '*-sources.jar', '*-shadow.jar'
+				}
+				into buildLibs(rootProject)
+				duplicatesStrategy = DuplicatesStrategy.INCLUDE
+			}
+		}
+	}
 }
 
-dependencies {
-    // To change the versions see the gradle.properties file
-    minecraft "com.mojang:minecraft:${project.minecraft_version}"
-    implementation "net.fabricmc:fabric-loader:${project.loader_version}"
-
-}
-
-processResources {
-    inputs.property "version", project.version
-    filteringCharset "UTF-8"
-
-    filesMatching("fabric.mod.json") {
-        expand "version": project.version
-    }
-}
-
-def targetJavaVersion = 25
-tasks.withType(JavaCompile).configureEach {
-    // ensure that the encoding is set to UTF-8, no matter what the system default is
-    // this fixes some edge cases with special characters not displaying correctly
-    // see http://yodaconditions.net/blog/fix-for-java-file-encoding-problems-with-gradle.html
-    // If Javadoc is generated, this must be specified in that task too.
-    it.options.encoding = "UTF-8"
-    if (targetJavaVersion >= 10 || JavaVersion.current().isJava10Compatible()) {
-        it.options.release.set(targetJavaVersion)
-    }
-}
-
-java {
-    def javaVersion = JavaVersion.toVersion(targetJavaVersion)
-    if (JavaVersion.current() < javaVersion) {
-        toolchain.languageVersion = JavaLanguageVersion.of(targetJavaVersion)
-    }
-    // Loom will automatically attach sourcesJar to a RemapSourcesJar task and to the "build" task
-    // if it is present.
-    // If you remove this line, sources will not be generated.
-    withSourcesJar()
-}
-
-// configure the maven publication
-publishing {
-    publications {
-        mavenJava(MavenPublication) {
-            artifactId = "${project.archives_base_name}-${project.minecraft_version}"
-            from components.java
-        }
-    }
-
-    // See https://docs.gradle.org/current/userguide/publishing_maven.html for information on how to set up publishing.
-    repositories {
-        maven {
-            name = "release"
-            url = 'https://maven.nova-committee.cn/releases'
-            credentials {
-                username = System.getenv("MAVEN_USERNAME")
-                password = System.getenv("MAVEN_PASSWORD")
-            }
-        }
-    }
+tasks.withType(JavaCompile) {
+	options.compilerArgs << '-Xlint:-processing'
 }
